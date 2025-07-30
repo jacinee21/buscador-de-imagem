@@ -3,11 +3,36 @@ from PIL import Image
 import os
 import tempfile
 
-# Verificação de dependências
-try:
-    import pytesseract
-except ModuleNotFoundError:
-    st.error("⚠️ O módulo pytesseract não está instalado. Vá até o menu '⚙️ Settings' no Streamlit Cloud e adicione 'pytesseract' no arquivo requirements.txt do seu repositório.")
+# Configuração e verificação de dependências
+def configurar_tesseract():
+    """Configura pytesseract para diferentes ambientes"""
+    try:
+        import pytesseract
+        
+        # Configuração específica para Streamlit Cloud
+        if 'STREAMLIT_CLOUD' in os.environ or 'HOSTNAME' in os.environ:
+            possible_paths = ['/usr/bin/tesseract', '/usr/local/bin/tesseract']
+            for path in possible_paths:
+                if os.path.exists(path):
+                    pytesseract.pytesseract.tesseract_cmd = path
+                    break
+        
+        # Teste se está funcionando
+        pytesseract.get_tesseract_version()
+        return pytesseract
+        
+    except ModuleNotFoundError:
+        st.error("⚠️ PyTesseract não encontrado. Verifique se requirements.txt contém 'pytesseract'")
+        st.info("📋 Crie um arquivo requirements.txt com: streamlit, Pillow, pytesseract")
+        return None
+    except Exception as e:
+        st.error(f"❌ Erro ao configurar Tesseract: {str(e)}")
+        st.info("📋 Verifique se o arquivo packages.txt contém: tesseract-ocr")
+        return None
+
+# Inicializar pytesseract
+pytesseract = configurar_tesseract()
+if pytesseract is None:
     st.stop()
 
 # Configuração da página
