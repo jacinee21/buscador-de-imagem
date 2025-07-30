@@ -4,6 +4,11 @@ import pytesseract
 import os
 import tempfile
 
+try:
+    import pytesseract
+except ModuleNotFoundError:
+    st.error("⚠️ O módulo pytesseract não está instalado. Vá até o menu '⚙️ Settings' no Streamlit Cloud e adicione 'pytesseract' no arquivo requirements.txt do seu repositório.")
+
 st.set_page_config(page_title="Buscador de Imagens por Nome na Embalagem", layout="wide")
 st.title("🔍 Buscador de Imagens a partir do nome na embalagem")
 
