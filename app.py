@@ -17,8 +17,8 @@ st.title("🔍 Buscador de Imagens a partir do nome na embalagem")
 st.markdown("""
 Este aplicativo permite:
 - Fazer upload de fotos de medicamentos para extrair o nome com OCR.
-- Fazer upload de um banco de imagens de referência.
-- Buscar e exibir imagens do banco que contenham nomes parecidos.
+- Fazer upload de um arquivo de texto (.txt) com nomes de referência para comparar.
+- Verificar se os nomes detectados nas imagens correspondem aos nomes do banco de texto.
 
 ✅ Use sempre que quiser: publique este arquivo no Streamlit Cloud ou rode localmente.
 """)
@@ -38,12 +38,12 @@ ocr_files = st.file_uploader(
     key="ocr_uploader"
 )
 
-# Upload do banco de imagens
-st.header("🗂️ Upload do banco de imagens para buscar")
-banco_files = st.file_uploader(
-    "Envie imagens do banco", 
-    type=['png', 'jpg', 'jpeg'], 
-    accept_multiple_files=True,
+# Upload do banco de nomes (arquivo de texto)
+st.header("🗂️ Upload do banco de nomes para comparar")
+banco_file = st.file_uploader(
+    "Envie um arquivo de texto (.txt) com os nomes para comparar (um nome por linha)", 
+    type=['txt'], 
+    accept_multiple_files=False,
     key="banco_uploader"
 )
 
@@ -65,26 +65,27 @@ def processar_ocr(file, temp_dir):
         st.error(f"Erro ao processar {file.name}: {str(e)}")
         return {"arquivo": file.name, "nome": "ERRO_NO_PROCESSAMENTO"}
 
-# Função para salvar imagens do banco
-def salvar_imagem_banco(file, temp_dir):
-    """Salva uma imagem do banco no diretório temporário"""
+# Função para carregar nomes do arquivo de texto
+def carregar_banco_nomes(file):
+    """Carrega os nomes do arquivo de texto"""
     try:
-        path = os.path.join(temp_dir, file.name)
-        with open(path, "wb") as f:
-            f.write(file.getbuffer())
-        return {"arquivo": file.name, "path": path}
+        # Lê o conteúdo do arquivo
+        content = file.getvalue().decode('utf-8')
+        # Divide em linhas e remove espaços em branco
+        nomes = [linha.strip() for linha in content.split('\n') if linha.strip()]
+        return nomes
     except Exception as e:
-        st.error(f"Erro ao salvar {file.name}: {str(e)}")
-        return None
+        st.error(f"Erro ao carregar arquivo de nomes: {str(e)}")
+        return []
 
 # Botão para executar a busca
 if st.button("🔍 Rodar busca"):
-    if ocr_files and banco_files:
+    if ocr_files and banco_file:
         nomes_detectados = []
         banco_nomes = []
         
         # Processamento das imagens para OCR
-        st.subheader("📄 Nomes detectados:")
+        st.subheader("📄 Nomes detectados nas imagens:")
         progress_bar = st.progress(0)
         
         for i, file in enumerate(ocr_files):
@@ -93,42 +94,60 @@ if st.button("🔍 Rodar busca"):
             st.write(f"📦 **{file.name}** → {resultado['nome']}")
             progress_bar.progress((i + 1) / len(ocr_files))
         
-        # Processamento das imagens do banco
-        st.subheader("🗂️ Preparando banco de imagens...")
-        for file in banco_files:
-            resultado = salvar_imagem_banco(file, st.session_state.banco_temp.name)
-            if resultado:
-                banco_nomes.append(resultado)
+        # Carregamento do banco de nomes
+        st.subheader("📋 Carregando banco de nomes...")
+        banco_nomes = carregar_banco_nomes(banco_file)
+        
+        if banco_nomes:
+            st.write(f"📊 **{len(banco_nomes)} nomes** carregados do banco:")
+            # Mostra os primeiros 10 nomes como exemplo
+            nomes_exemplo = banco_nomes[:10]
+            st.write(", ".join(nomes_exemplo) + ("..." if len(banco_nomes) > 10 else ""))
+        else:
+            st.error("❌ Nenhum nome foi encontrado no arquivo de texto.")
+            st.stop()
         
         # Busca por correspondências
-        st.subheader("🖼️ Resultados encontrados:")
+        st.subheader("🖼️ Resultados da comparação:")
         
         for item in nomes_detectados:
-            nome = item['nome'].lower()
+            nome_detectado = item['nome'].lower()
             achou = False
+            nomes_encontrados = []
             
-            # Busca no nome do arquivo
-            for b in banco_nomes:
-                nome_arquivo = b['arquivo'].lower()
-                
-                # Busca por correspondência parcial
-                if nome != "nome_nao_detectado" and nome != "erro_no_processamento":
-                    # Divide o nome em palavras para busca mais flexível
-                    palavras_nome = nome.split()
-                    if any(palavra in nome_arquivo for palavra in palavras_nome if len(palavra) > 2):
-                        st.write(f"✅ **{item['nome']}** → {b['arquivo']}")
-                        try:
-                            img = Image.open(b['path'])
-                            st.image(img, caption=b['arquivo'], width=200)
+            if nome_detectado not in ["nome_nao_detectado", "erro_no_processamento"]:
+                # Busca por correspondências no banco de nomes
+                for nome_banco in banco_nomes:
+                    nome_banco_lower = nome_banco.lower()
+                    
+                    # Verifica se há correspondência (busca bidirecional)
+                    palavras_detectado = nome_detectado.split()
+                    palavras_banco = nome_banco_lower.split()
+                    
+                    # Verifica se alguma palavra do nome detectado está no nome do banco
+                    for palavra in palavras_detectado:
+                        if len(palavra) > 2 and palavra in nome_banco_lower:
+                            nomes_encontrados.append(nome_banco)
                             achou = True
-                        except Exception as e:
-                            st.error(f"Erro ao exibir imagem {b['arquivo']}: {str(e)}")
+                            break
+                    
+                    # Verifica se alguma palavra do banco está no nome detectado
+                    if not achou:
+                        for palavra in palavras_banco:
+                            if len(palavra) > 2 and palavra in nome_detectado:
+                                nomes_encontrados.append(nome_banco)
+                                achou = True
+                                break
             
-            if not achou:
-                st.write(f"⚠️ Nenhum resultado para **{item['nome']}**")
+            # Exibe resultados
+            if achou:
+                st.write(f"✅ **{item['arquivo']}** (detectou: '{item['nome']}')")
+                st.write(f"   🎯 **Correspondências encontradas:** {', '.join(set(nomes_encontrados))}")
+            else:
+                st.write(f"⚠️ **{item['arquivo']}** (detectou: '{item['nome']}') → Nenhuma correspondência no banco")
     
     else:
-        st.warning("⚠️ Envie arquivos para OCR e banco de imagens antes de executar a busca.")
+        st.warning("⚠️ Envie arquivos de imagem para OCR e um arquivo de texto com os nomes antes de executar a busca.")
 
 # Limpeza de cache (opcional)
 if st.button("🗑️ Limpar cache de imagens"):
